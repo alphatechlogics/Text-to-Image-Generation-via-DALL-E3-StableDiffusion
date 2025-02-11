@@ -55,8 +55,8 @@ pip install -r requirements.txt
 1. **Clone the repository (if not already done):**
 
 ```bash
-git clone https://github.com/yourusername/text-to-image-generation.git
-cd text-to-image-generation
+git clone https://github.com/alphatechlogics/Text-to-Image-Generation-via-DALL-E3-StableDiffusion.git
+cd Text-to-Image-Generation-via-DALL-E3-StableDiffusion
 ```
 
 2. **Run the Streamlit app:**
