@@ -39,16 +39,8 @@ This app is perfect for experimenting with AI-generated art and prototyping crea
 
 ### Prerequisites
 
-- Python 3.8 or later
+- Python 3.10 or later
 - [pip](https://pip.pypa.io/en/stable/)
-
-### Install Required Packages
-
-Open your terminal and install the dependencies:
-
-```bash
-pip install -r requirements.txt
-```
 
 ## Usage
 
@@ -57,6 +49,14 @@ pip install -r requirements.txt
 ```bash
 git clone https://github.com/alphatechlogics/Text-to-Image-Generation-via-DALL-E3-StableDiffusion.git
 cd Text-to-Image-Generation-via-DALL-E3-StableDiffusion
+```
+
+### Install Required Packages
+
+Open your terminal and install the dependencies:
+
+```bash
+pip install -r requirements.txt
 ```
 
 2. **Run the Streamlit app:**
