@@ -1,8 +1,12 @@
+import os
 import streamlit as st
 from PIL import Image
 import torch
 from diffusers import StableDiffusionPipeline
 from openai import OpenAI
+import speech_recognition as sr
+from st_audiorec import st_audiorec
+from pydub import AudioSegment
 
 # ---------------------------
 # Page & App Configuration
@@ -34,24 +38,110 @@ model_choice = st.sidebar.radio(
     ("OpenAI DALL-E", "Stable Diffusion (Open Source)")
 )
 
-# Only show the API key input if OpenAI DALL-E is selected.
 if model_choice == "OpenAI DALL-E":
     openai_api_key = st.sidebar.text_input(
         "Enter your OpenAI API Key", type="password")
 else:
     openai_api_key = None
 
+# Initialize voice_text in session state if not already set.
+if "voice_text" not in st.session_state:
+    st.session_state.voice_text = ""
+
 # ---------------------------
 # Main Input Section
 # ---------------------------
 st.subheader("Image Generation Settings")
+
+# In order for the voice text to appear in the prompt text field,
+# we set its default value to st.session_state.voice_text if available.
+default_prompt = st.session_state.voice_text if st.session_state.voice_text != "" else ""
 img_description = st.text_input(
     "Enter the image description",
-    placeholder="e.g., A futuristic city skyline at sunset"
+    placeholder="e.g., A futuristic city skyline at sunset",
+    # Default value comes from the voice transcription (if available)
+    value=default_prompt
 )
+
+# Voice recording column
+col1, col2 = st.columns([4, 1])
+with col2:
+    st.write("Record Voice Input:")
+    audio_data = st_audiorec()
+
+# Process voice recording if available and of sufficient length.
+if audio_data is not None:
+    # Check if the recorded audio is long enough (adjust threshold as needed)
+    if len(audio_data) < 1000:
+        st.warning(
+            "The recorded audio seems too short. Please record a longer voice prompt.")
+    else:
+        # Avoid reprocessing the same audio.
+        if "prev_audio_data" not in st.session_state or st.session_state.prev_audio_data != audio_data:
+            st.session_state.prev_audio_data = audio_data
+
+            # Save the raw audio data to a temporary file.
+            raw_audio_path = "temp.wav"
+            with open(raw_audio_path, "wb") as f:
+                f.write(audio_data)
+
+            # Convert the audio file to the format required by pocketsphinx:
+            # 16 kHz, mono, 16-bit PCM.
+            try:
+                sound = AudioSegment.from_file(raw_audio_path, format="wav")
+                sound = sound.set_frame_rate(
+                    16000).set_channels(1).set_sample_width(2)
+                converted_audio_path = "temp_converted.wav"
+                sound.export(converted_audio_path, format="wav")
+            except Exception as e:
+                st.error("Error converting audio file: " + str(e))
+                converted_audio_path = raw_audio_path  # fallback
+
+            # Use SpeechRecognition to transcribe the converted audio.
+            r = sr.Recognizer()
+            try:
+                with sr.AudioFile(converted_audio_path) as source:
+                    audio = r.record(source)
+                    try:
+                        # First, try offline recognition using pocketsphinx.
+                        text = r.recognize_sphinx(audio)
+                    except Exception as e:
+                        st.warning("Offline recognition failed (" +
+                                   str(e) + "). Trying online recognition...")
+                        try:
+                            text = r.recognize_google(audio)
+                        except Exception as e2:
+                            st.error(
+                                "Online recognition also failed: " + str(e2))
+                            text = ""
+                    if text:
+                        st.session_state.voice_text = text
+                        st.info("Voice prompt converted to text: " + text)
+                        # Attempt to force a rerun so that the text input is re-rendered with the new default.
+                        try:
+                            st.experimental_rerun()
+                        except Exception:
+                            pass
+            except sr.UnknownValueError:
+                st.error("Could not understand audio")
+            except sr.RequestError as e:
+                st.error(f"Recognition error: {e}")
+            finally:
+                # Clean up temporary files.
+                try:
+                    os.remove(raw_audio_path)
+                    os.remove(converted_audio_path)
+                except Exception:
+                    pass
+
 num_of_images = st.number_input(
-    "Number of images", min_value=1, max_value=10, value=1, step=1
-)
+    "Number of images", min_value=1, max_value=10, value=1, step=1)
+
+# ---------------------------
+# Final Prompt Creation
+# ---------------------------
+# Now, the final prompt is directly taken from the text input field.
+final_prompt = img_description
 
 # ---------------------------
 # OpenAI DALL·E Generation Function
@@ -71,7 +161,6 @@ def generate_image_openai(image_description, num_images, api_key):
         quality="standard",
         n=num_images
     )
-    # Extract image URLs from the response
     image_urls = [img.url for img in img_response.data]
     return image_urls
 
@@ -92,7 +181,6 @@ def load_stable_diffusion():
         model_id, torch_dtype=torch_dtype)
     device = "cuda" if torch.cuda.is_available() else "cpu"
     pipe = pipe.to(device)
-    # Disable the safety checker to prevent black images
     pipe.safety_checker = lambda images, clip_input, **kwargs: (
         images, [False] * len(images))
     return pipe
@@ -117,8 +205,8 @@ def generate_image_stable_diffusion(image_description, num_images):
 # Image Generation Trigger
 # ---------------------------
 if st.button("Generate Image"):
-    if not img_description:
-        st.error("Please enter an image description.")
+    if not final_prompt.strip():
+        st.error("Please provide an image description or record a voice prompt.")
     else:
         if model_choice == "OpenAI DALL-E":
             if not openai_api_key:
@@ -127,9 +215,9 @@ if st.button("Generate Image"):
                 with st.spinner("Generating image(s) using OpenAI DALL-E..."):
                     try:
                         images = generate_image_openai(
-                            img_description, num_of_images, openai_api_key)
+                            final_prompt, num_of_images, openai_api_key)
                         st.success("Image generation complete!")
-                        st.image(images, caption=img_description,
+                        st.image(images, caption=final_prompt,
                                  use_container_width=True)
                     except Exception as e:
                         st.error(
@@ -138,9 +226,9 @@ if st.button("Generate Image"):
             with st.spinner("Generating image(s) using Stable Diffusion..."):
                 try:
                     images = generate_image_stable_diffusion(
-                        img_description, num_of_images)
+                        final_prompt, num_of_images)
                     st.success("Image generation complete!")
-                    st.image(images, caption=img_description,
+                    st.image(images, caption=final_prompt,
                              use_container_width=True)
                 except Exception as e:
                     st.error(
