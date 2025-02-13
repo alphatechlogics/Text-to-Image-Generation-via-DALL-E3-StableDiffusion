@@ -4,12 +4,12 @@ from PIL import Image
 import torch
 from diffusers import StableDiffusionPipeline
 from openai import OpenAI
-import speech_recognition as sr
 from st_audiorec import st_audiorec
 from pydub import AudioSegment
+import whisper  # Using OpenAI's Whisper
 
 # ---------------------------
-# Page & App Configuration
+# Page & App Configuration (must be first)
 # ---------------------------
 st.set_page_config(
     page_title="Text to Image Generation",
@@ -17,14 +17,82 @@ st.set_page_config(
     layout="wide"
 )
 
-# App title and instructions
+# ---------------------------
+# Custom CSS for enhanced UI
+# ---------------------------
+st.markdown(
+    """
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.2.0/css/all.min.css">
+    <style>
+    /* Page background and font */
+    body {
+        background-color: #f5f5f5;
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+    /* Title styling */
+    h1 {
+        color: #333333;
+        margin-bottom: 0;
+    }
+    /* Subtitle styling */
+    h3 {
+        color: #008CBA;
+        margin-bottom: 0;
+    }
+    /* Input fields styling */
+    .stTextInput>div>div>input {
+        border-radius: 8px;
+        border: 1px solid #cccccc;
+        padding: 10px;
+    }
+    /* Generate Button styling */
+    .stButton>button {
+        background-color: #008CBA;
+        color: white;
+        padding: 12px 24px;
+        border: none;
+        border-radius: 8px;
+        font-size: 16px;
+        cursor: pointer;
+    }
+    .stButton>button:hover {
+        background-color: #007399;
+    }
+    /* Voice recorder container styling */
+    .voice-recorder-container {
+        background-color: #ffffff;
+        border-radius: 8px;
+        padding: 20px;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+        text-align: center;
+        margin-top: 20px;
+    }
+    .voice-recorder-container h3 {
+        margin: 0;
+        padding-bottom: 10px;
+        font-size: 20px;
+    }
+    .voice-recorder-container p {
+        margin: 0;
+        font-size: 14px;
+        color: #666666;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
+# ---------------------------
+# App Title and Instructions
+# ---------------------------
 st.markdown("<h1 style='text-align: center;'>Text to Image Generation</h1>",
             unsafe_allow_html=True)
 st.markdown(
     """
-    Generate images from your text prompts using either **OpenAI DALL-E** or **Stable Diffusion**.
-    
+    <p style='text-align: center; color: #555555; font-size:18px;'>
+    Generate images from your text prompts using either <strong>OpenAI DALL-E</strong> or <strong>Stable Diffusion</strong>.<br>
     For OpenAI DALL-E, please provide your own API key.
+    </p>
     """,
     unsafe_allow_html=True
 )
@@ -53,40 +121,62 @@ if "voice_text" not in st.session_state:
 # ---------------------------
 st.subheader("Image Generation Settings")
 
-# In order for the voice text to appear in the prompt text field,
-# we set its default value to st.session_state.voice_text if available.
+# Create a placeholder for the prompt input field so it can be updated dynamically.
+prompt_placeholder = st.empty()
 default_prompt = st.session_state.voice_text if st.session_state.voice_text != "" else ""
-img_description = st.text_input(
+img_description = prompt_placeholder.text_input(
     "Enter the image description",
     placeholder="e.g., A futuristic city skyline at sunset",
-    # Default value comes from the voice transcription (if available)
-    value=default_prompt
+    value=default_prompt,
+    key="img_description"
 )
 
-# Voice recording column
+# Create two columns: one for the prompt input (above) and one for voice recording.
 col1, col2 = st.columns([4, 1])
+# Audio recording section
 with col2:
-    st.write("Record Voice Input:")
-    audio_data = st_audiorec()
+    st.markdown("""
+        <div class="voice-recorder-container">
+            <h3><i class="fas fa-microphone"></i> Record Voice Input</h3>
+            <p>Click below to record your prompt</p>
+            <p style="font-size:12px; color:#999;">Ensure your browser has microphone access enabled.</p>
+        </div>
+    """, unsafe_allow_html=True)
+
+    try:
+        # Add a warning message about browser compatibility
+        st.markdown("⚠️ Audio recording requires Chrome/Firefox/Edge browser")
+
+        # Wrap the audio recorder in error handling
+        audio_data = st_audiorec()
+        if audio_data is not None:
+            st.success("Audio recorded successfully!")
+
+    except Exception as e:
+        st.error(f"Audio recording error: {str(e)}")
+        st.info("Please try:\n1. Using Chrome/Firefox/Edge browser\n2. Allowing microphone access\n3. Refreshing the page")
+        audio_data = None
+        
+# Check if audio data was captured; if not, inform the user.
+if audio_data is None:
+    st.warning(
+        "No audio data received. Please check that your microphone is enabled and try again.")
 
 # Process voice recording if available and of sufficient length.
 if audio_data is not None:
-    # Check if the recorded audio is long enough (adjust threshold as needed)
     if len(audio_data) < 1000:
         st.warning(
             "The recorded audio seems too short. Please record a longer voice prompt.")
     else:
-        # Avoid reprocessing the same audio.
         if "prev_audio_data" not in st.session_state or st.session_state.prev_audio_data != audio_data:
             st.session_state.prev_audio_data = audio_data
 
-            # Save the raw audio data to a temporary file.
+            # Save raw audio to a temporary file.
             raw_audio_path = "temp.wav"
             with open(raw_audio_path, "wb") as f:
                 f.write(audio_data)
 
-            # Convert the audio file to the format required by pocketsphinx:
-            # 16 kHz, mono, 16-bit PCM.
+            # Convert audio to 16 kHz, mono, 16-bit PCM (recommended for Whisper)
             try:
                 sound = AudioSegment.from_file(raw_audio_path, format="wav")
                 sound = sound.set_frame_rate(
@@ -97,35 +187,23 @@ if audio_data is not None:
                 st.error("Error converting audio file: " + str(e))
                 converted_audio_path = raw_audio_path  # fallback
 
-            # Use SpeechRecognition to transcribe the converted audio.
-            r = sr.Recognizer()
+            # Use Whisper for transcription.
             try:
-                with sr.AudioFile(converted_audio_path) as source:
-                    audio = r.record(source)
-                    try:
-                        # First, try offline recognition using pocketsphinx.
-                        text = r.recognize_sphinx(audio)
-                    except Exception as e:
-                        st.warning("Offline recognition failed (" +
-                                   str(e) + "). Trying online recognition...")
-                        try:
-                            text = r.recognize_google(audio)
-                        except Exception as e2:
-                            st.error(
-                                "Online recognition also failed: " + str(e2))
-                            text = ""
-                    if text:
-                        st.session_state.voice_text = text
-                        st.info("Voice prompt converted to text: " + text)
-                        # Attempt to force a rerun so that the text input is re-rendered with the new default.
-                        try:
-                            st.experimental_rerun()
-                        except Exception:
-                            pass
-            except sr.UnknownValueError:
-                st.error("Could not understand audio")
-            except sr.RequestError as e:
-                st.error(f"Recognition error: {e}")
+                whisper_model = whisper.load_model("base")
+                result = whisper_model.transcribe(converted_audio_path)
+                text = result["text"].strip()
+                if text:
+                    st.session_state.voice_text = text
+                    st.info("Voice prompt converted to text: " + text)
+                    # Update the prompt input field with the new transcription.
+                    prompt_placeholder.text_input(
+                        "Enter the image description",
+                        placeholder="e.g., A futuristic city skyline at sunset",
+                        value=text,
+                        key="img_description_updated"
+                    )
+            except Exception as e:
+                st.error("Whisper transcription failed: " + str(e))
             finally:
                 # Clean up temporary files.
                 try:
@@ -134,29 +212,21 @@ if audio_data is not None:
                 except Exception:
                     pass
 
-# ---------------------------
-# Final Prompt Creation
-# ---------------------------
-# Now, the final prompt is directly taken from the text input field.
-final_prompt = img_description
+# Final prompt is taken from the updated text input field if available.
+final_prompt = st.session_state.get("img_description_updated", img_description)
 
 # ---------------------------
-# OpenAI DALL·E Generation Function
+# OpenAI DALL-E Generation Function
 # ---------------------------
 
 
-def generate_image_openai(image_description, num_images, api_key):
-    """
-    Generate images using OpenAI's DALL-E model.
-    Returns a list of image URLs.
-    """
+def generate_image_openai(image_description, api_key):
     client = OpenAI(api_key=api_key)
     img_response = client.images.generate(
         model="dall-e-3",
         prompt=image_description,
         size="1024x1024",
-        quality="standard",
-        n=num_images
+        quality="standard"
     )
     image_urls = [img.url for img in img_response.data]
     return image_urls
@@ -168,10 +238,6 @@ def generate_image_openai(image_description, num_images, api_key):
 
 @st.cache_resource
 def load_stable_diffusion():
-    """
-    Load and cache the Stable Diffusion pipeline.
-    The NSFW safety checker is disabled to avoid returning black images.
-    """
     model_id = "runwayml/stable-diffusion-v1-5"
     torch_dtype = torch.float16 if torch.cuda.is_available() else torch.float32
     pipe = StableDiffusionPipeline.from_pretrained(
@@ -183,17 +249,12 @@ def load_stable_diffusion():
     return pipe
 
 
-def generate_image_stable_diffusion(image_description, num_images):
-    """
-    Generate images using Stable Diffusion.
-    Returns a list of PIL Image objects.
-    """
+def generate_image_stable_diffusion(image_description):
     pipe = load_stable_diffusion()
     result = pipe(
         image_description,
         num_inference_steps=50,
-        guidance_scale=7.5,
-        num_images_per_prompt=num_images
+        guidance_scale=7.5
     )
     return result.images
 
@@ -209,10 +270,10 @@ if st.button("Generate Image"):
             if not openai_api_key:
                 st.error("Please provide a valid OpenAI API key in the sidebar.")
             else:
-                with st.spinner("Generating image(s) using OpenAI DALL-E..."):
+                with st.spinner("Generating image using OpenAI DALL-E..."):
                     try:
                         images = generate_image_openai(
-                            final_prompt, num_of_images, openai_api_key)
+                            final_prompt, openai_api_key)
                         st.success("Image generation complete!")
                         st.image(images, caption=final_prompt,
                                  use_container_width=True)
@@ -220,10 +281,9 @@ if st.button("Generate Image"):
                         st.error(
                             f"Error generating image with OpenAI DALL-E: {e}")
         else:
-            with st.spinner("Generating image(s) using Stable Diffusion..."):
+            with st.spinner("Generating image using Stable Diffusion..."):
                 try:
-                    images = generate_image_stable_diffusion(
-                        final_prompt, num_of_images)
+                    images = generate_image_stable_diffusion(final_prompt)
                     st.success("Image generation complete!")
                     st.image(images, caption=final_prompt,
                              use_container_width=True)

@@ -1,6 +1,6 @@
 # Text to Image Generation 🖼️🚀
 
-Welcome to **Text to Image Generation** – a Streamlit-based web application that allows you to generate images from text prompts using cutting-edge AI models. Choose between **OpenAI DALL-E 3** and **Stable Diffusion** to create stunning visuals based on your creative ideas!
+Welcome to **Text to Image Generation** – a Streamlit-based web application that allows you to generate images from text prompts using cutting-edge AI models. Choose between **OpenAI DALL-E 3** and **Stable Diffusion** to create stunning visuals from your creative ideas.
 
 ## Table of Contents
 
@@ -13,9 +13,9 @@ Welcome to **Text to Image Generation** – a Streamlit-based web application th
 
 ## Overview
 
-**Text to Image Generation** is an interactive web application built with [Streamlit](https://streamlit.io/) that lets you convert text prompts into images. You can choose between:
+**Text to Image Generation** is an interactive web application built with [Streamlit](https://streamlit.io/) that converts your text prompts into images. You can choose between:
 
-- **OpenAI DALL-E 3**: Generate images using OpenAI's advanced DALL-E model (requires your own API key).
+- **OpenAI DALL-E 3**: Generate images using OpenAI's advanced DALL-E model (_requires your own API key_).
 - **Stable Diffusion (Open Source)**: Generate images locally with the Stable Diffusion model provided by RunwayML using the [Diffusers](https://github.com/huggingface/diffusers) library.
 
 This app is perfect for experimenting with AI-generated art and prototyping creative ideas.
@@ -23,14 +23,14 @@ This app is perfect for experimenting with AI-generated art and prototyping crea
 ## Features
 
 - **Model Selection**: Easily switch between OpenAI DALL-E 3 and Stable Diffusion.
-- **User-Friendly Interface**: Clean and responsive design with input fields for text prompts and image count.
-- **Dynamic API Key Entry**: For OpenAI DALL-E 3 users, enter your API key directly in the app sidebar.
-- **Voice Input for Prompts**:
-  - **Record Your Voice**: A new voice recording feature allows you to record a voice prompt directly within the app.
-  - **Automatic Voice-to-Text Conversion**: The recorded audio is automatically transcribed into text using a combination of offline (pocketsphinx) and online (Google) speech recognition services.
-  - **Seamless Prompt Integration**: The transcribed voice text is automatically inserted into the prompt text field for a streamlined experience.
-- **Enhanced Image Generation**: Displays generated images directly in the browser.
-- **NSFW Safety Bypass for Stable Diffusion**: (⚠️ **Note**: The safety checker is disabled for Stable Diffusion to prevent blank (black) images from being returned. Use responsibly.)
+- **User-Friendly Interface**: A clean and responsive design with intuitive input fields.
+- **Dynamic API Key Entry**: For OpenAI DALL-E 3 users, simply enter your API key in the sidebar.
+- **Enhanced Voice Input for Prompts**:
+  - **Record Your Voice**: Use the integrated voice recording feature to capture your spoken prompt.
+  - **Accurate Transcription with Whisper**: The recorded audio is converted to the required format and transcribed using OpenAI's open-source [Whisper](https://github.com/openai/whisper) model.
+  - **Automatic Prompt Update**: The transcribed text is automatically inserted into the prompt field so you can easily review and edit it.
+- **Image Generation**: Generates a single image from your prompt and displays it directly in the browser.
+- **NSFW Safety Bypass for Stable Diffusion**: (⚠️ **Note**: The safety checker is disabled for Stable Diffusion to prevent blank (black) images. Use responsibly.)
 
 ## Models Used
 
@@ -82,14 +82,16 @@ streamlit run app.py
 
 ## Voice Input Functionality
 
-The new voice input feature lets you simply record your voice to create your image prompt. Here’s how it works:
+The new voice input feature allows you to record your voice to generate your image prompt. Here’s how it works:
 
 - **Recording:**
-  Click on the voice recording button (displayed as a microphone icon) next to the text prompt field.
 
-- **Transcription:**
-  The app uses st_audiorec for recording audio, and then employs SpeechRecognition along with pydub to convert your voice to text.
-  The transcription process attempts offline recognition first and then falls back to online recognition if needed.
+  - Click on the **Record Voice Input** area (with the microphone icon) to start recording.
+  - **Important:** Ensure your browser has microphone access enabled. If the recorder does not start, verify your permissions or try a different browser (Chrome, Firefox, or Edge are recommended).
+- **Audio Processing & Transcription:**
 
-- **Automatic Insertion:**
-  Once transcribed, the voice prompt text is automatically set as the default value in the text input field so you can immediately see and use it for image generation.
+  - The recorded audio is saved and converted to 16 kHz, mono, 16-bit PCM using pydub.
+  - The converted audio is then transcribed using OpenAI’s open-source Whisper model, which provides improved accuracy over previous methods.
+- **Prompt Update:**
+
+  - Once transcribed, the voice prompt text is automatically inserted into the prompt text field so you can immediately see and, if needed, edit the text before generating your image.
