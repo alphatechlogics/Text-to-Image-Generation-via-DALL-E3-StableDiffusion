@@ -134,9 +134,6 @@ if audio_data is not None:
                 except Exception:
                     pass
 
-num_of_images = st.number_input(
-    "Number of images", min_value=1, max_value=10, value=1, step=1)
-
 # ---------------------------
 # Final Prompt Creation
 # ---------------------------
